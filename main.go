@@ -4,14 +4,39 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// Function to send a message to a Telegram bot
+func sendTelegramMessage(botToken, chatID, message string) error {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+	reqBody := fmt.Sprintf("chat_id=%s&text=%s", chatID, message)
+
+	resp, err := http.Post(url, "application/x-www-form-urlencoded", strings.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("failed to send message: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("telegram API responded with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
 
 // Initialize the database, create the table if it doesn't exist
 func initDb(pool *pgxpool.Pool) error {
@@ -77,46 +102,54 @@ func saveToDatabase(pool *pgxpool.Pool, poolUsage int) error {
 }
 
 func main() {
-	// Get the database connection parameters from environment variables
+	// Get the database connection parameters and Telegram bot credentials from environment variables
 	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		fmt.Println("DATABASE_URL environment variable is not set")
-		return
+	botToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	chatID := os.Getenv("TELEGRAM_CHAT_ID")
+
+	if dbURL == "" || botToken == "" || chatID == "" {
+		log.Fatal("DATABASE_URL, TELEGRAM_BOT_TOKEN, and TELEGRAM_CHAT_ID environment variables must be set")
 	}
 
 	// Create a connection pool
 	config, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
-		fmt.Printf("Unable to parse DATABASE_URL: %v\n", err)
-		return
+		log.Fatalf("Unable to parse DATABASE_URL: %v\n", err)
 	}
 	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
-		fmt.Printf("Unable to create connection pool: %v\n", err)
-		return
+		log.Fatalf("Unable to create connection pool: %v\n", err)
 	}
 	defer pool.Close()
 
 	// Initialize the database
 	err = initDb(pool)
 	if err != nil {
-		fmt.Println("Error initializing the database:", err)
-		return
+		log.Fatalf("Error initializing the database: %v\n", err)
 	}
 
 	// Fetch the pool usage
 	usage, err := fetchPoolUsage()
 	if err != nil {
-		fmt.Println("Error fetching pool usage:", err)
+		log.Printf("Error fetching pool usage: %v\n", err)
 		return
 	}
-	fmt.Printf("Current swimming pool usage: %d%%\n", usage)
+	log.Printf("Current swimming pool usage: %d%%\n", usage)
 
 	// Save the result to the database
 	err = saveToDatabase(pool, usage)
 	if err != nil {
-		fmt.Println("Error saving to database:", err)
+		log.Printf("Error saving to database: %v\n", err)
 	} else {
-		fmt.Println("Data successfully saved to the database.")
+		log.Println("Data successfully saved to the database.")
+	}
+
+	// Send the result to the Telegram bot
+	message := fmt.Sprintf("Current swimming pool usage is %d%%", usage)
+	err = sendTelegramMessage(botToken, chatID, message)
+	if err != nil {
+		log.Printf("Error sending message to Telegram: %v\n", err)
+	} else {
+		log.Println("Message successfully sent to Telegram.")
 	}
 }
