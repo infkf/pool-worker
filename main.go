@@ -143,13 +143,14 @@ func main() {
 	} else {
 		log.Println("Data successfully saved to the database.")
 	}
-
-	// Send the result to the Telegram bot
-	message := fmt.Sprintf("Current swimming pool usage is %d%%", usage)
-	err = sendTelegramMessage(botToken, chatID, message)
-	if err != nil {
-		log.Printf("Error sending message to Telegram: %v\n", err)
-	} else {
-		log.Println("Message successfully sent to Telegram.")
+	if usage != 0 {
+		// Send the result to the Telegram bot
+		message := fmt.Sprintf("Current swimming pool usage is %d%%", usage)
+		err = sendTelegramMessage(botToken, chatID, message)
+		if err != nil {
+			log.Printf("Error sending message to Telegram: %v\n", err)
+		} else {
+			log.Println("Message successfully sent to Telegram.")
+		}
 	}
 }
